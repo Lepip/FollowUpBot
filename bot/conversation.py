@@ -27,7 +27,7 @@ class ConversationManager:
         async with Database() as db:
             self.chat_id = chat_id
             self.have_questions = False
-            self.stage_id, self.batch_id, self.is_started, self.is_concluded = await db.get_conv_stage(chat_id)
+            self.stage_id, self.batch_id, self.is_started, self.is_concluded, self.set_theme = await db.get_conv_stage(chat_id)
             self.load_stage()
 
     def load_stage(self, stage_id=None, batch_id=None):
@@ -88,7 +88,7 @@ class ConversationManager:
     async def update_db(self):
         async with Database() as db:
             self.batch_id = self.questionnaire.get_current_batch_id()
-            await db.set_conv_stage(self.chat_id, self.stage_id, self.batch_id, self.is_started, self.is_concluded)
+            await db.set_conv_stage(self.chat_id, self.stage_id, self.batch_id, self.is_started, self.is_concluded, self.set_theme)
 
     async def get_response(self, message, llm):
         if self.is_concluded:
@@ -110,6 +110,14 @@ class ConversationManager:
             await self.update_db()
             return start_message
         
+        if not self.set_theme:
+            self.set_theme = True
+            theme_message = PromptEngineer.initial_theme_prompt()
+            async with Database() as db:
+                await db.add_message(self.chat_id, theme_message, "assistant")
+            await self.update_db()
+            return theme_message
+
         if not self.have_questions:
             self.have_questions = True
             self.batch_id = -1

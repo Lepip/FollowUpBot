@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS public.convs
     is_started boolean NOT NULL DEFAULT FALSE,
     is_concluded boolean NOT NULL DEFAULT FALSE,
     has_questions boolean NOT NULL DEFAULT FALSE,
+    set_theme boolean NOT NULL DEFAULT FALSE,
     stage_id integer NOT NULL,
     batch_id integer NOT NULL
 );

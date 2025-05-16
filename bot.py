@@ -67,9 +67,17 @@ async def restart_conversation(message: types.Message, state: FSMContext):
     conversation = data.get("conversation")
     await conversation.restart_conversation()
     await message.reply(await get_answer(conversation))
+    data.update(conversation=conversation)
+    await state.update_data(data)
 
 @dp.message_handler(state=ConversationStates.in_conversation, content_types=types.ContentTypes.TEXT)
 async def handle_in_conversation(message: types.Message, state: FSMContext):
+    if message.text == "/status":
+        await check_status(message, state)
+        return
+    if message.text == "/restart":
+        await restart_conversation(message, state)
+        return
     data = await state.get_data()
     conversation = data.get("conversation")
     if conversation.is_concluded:
@@ -81,6 +89,8 @@ async def handle_in_conversation(message: types.Message, state: FSMContext):
             await state.finish()
             return
         await message.reply(answer)
+    data.update(conversation=conversation)
+    await state.update_data(data)
 
 @dp.message_handler(commands=['status'], state=ConversationStates.in_conversation)
 async def check_status(message: types.Message, state: FSMContext):
@@ -105,7 +115,6 @@ async def handle_outside_conversation(message: types.Message, state: FSMContext)
     if conversation.is_concluded:
         await message.reply("Разговор закончен, отправьте /restart для начала нового.")
     else:
-        await state.update_data(conversation=conversation)
         await ConversationStates.in_conversation.set()
         answer = await get_answer(conversation, message.text)
         if answer is None:
@@ -113,7 +122,7 @@ async def handle_outside_conversation(message: types.Message, state: FSMContext)
             await state.finish()
             return
         await message.reply(answer)
-
+        await state.update_data(conversation=conversation)
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)

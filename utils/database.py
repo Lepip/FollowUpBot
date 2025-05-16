@@ -24,11 +24,15 @@ class Database:
             chat_id
         )
         await self.conn.execute(
+            "DELETE FROM chatlogs WHERE chat_id=$1",
+            chat_id
+        )
+        await self.conn.execute(
             '''
-            INSERT INTO convs (chat_id, is_started, is_concluded, stage_id, batch_id)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO convs (chat_id, is_started, is_concluded, set_theme, stage_id, batch_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ''', 
-            chat_id, False, False, 0, -1
+            chat_id, False, False, False, 0, -1
         )
     
     async def start_conv(self, chat_id: int):
@@ -45,17 +49,17 @@ class Database:
 
     async def get_conv_stage(self, chat_id: int) -> Tuple[int, int, bool, bool]:
         res = await self.conn.fetchrow(
-            "SELECT stage_id, batch_id, is_started, is_concluded FROM convs WHERE chat_id=$1", 
+            "SELECT stage_id, batch_id, is_started, is_concluded, set_theme FROM convs WHERE chat_id=$1", 
             chat_id
         )
         if not res:
             await self.restart_conv(chat_id)
-        return (res['stage_id'], res['batch_id'], res['is_started'], res['is_concluded']) if res else (0, -1, False, False)
+        return (res['stage_id'], res['batch_id'], res['is_started'], res['is_concluded'], res['set_theme']) if res else (0, -1, False, False, False)
     
-    async def set_conv_stage(self, chat_id: int, stage_id: int, batch_id: int, is_started: bool, is_concluded: bool):
+    async def set_conv_stage(self, chat_id: int, stage_id: int, batch_id: int, is_started: bool, is_concluded: bool, set_theme: bool):
         await self.conn.execute(
-            "UPDATE convs SET stage_id = $2, batch_id = $3, is_started = $4, is_concluded = $5 WHERE chat_id = $1",
-            chat_id, stage_id, batch_id, is_started, is_concluded
+            "UPDATE convs SET stage_id = $2, batch_id = $3, is_started = $4, is_concluded = $5, set_theme = $6 WHERE chat_id = $1",
+            chat_id, stage_id, batch_id, is_started, is_concluded, set_theme
         )
 
     async def get_messages(self, chat_id: int) -> list[dict]:
