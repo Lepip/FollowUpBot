@@ -87,9 +87,11 @@ class StageOperator:
             self.current_batch = Batch(None, None, (self.batches[0]) if self.batches else None)
         else:
             self.current_batch = self.batches[batch_id]
-
+        if DEBUG:
+            print(f"Current batch: {self.current_batch}")
 
     def get(self, if_yes: bool = False):
+        log.info(f"Getting next batch. Current batch: {self.current_batch}. If yes: {if_yes}")
         if self.current_batch is None:
             return None, False
         
@@ -106,6 +108,8 @@ class StageOperator:
     
     def get_current_batch_id(self):
         if self.current_batch is None:
+            return -1
+        if self.current_batch not in self.batches:
             return -1
         return self.batches.index(self.current_batch)
         
