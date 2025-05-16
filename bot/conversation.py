@@ -6,15 +6,6 @@ from utils.config import cfg
 import logging
 log = logging.getLogger(__name__)
 
-
-class MessageHandler:
-    def generate(self, messages):
-        for message in messages:
-            print(message)
-        user_input = input("Please enter doctor answer: ")
-        return user_input
-
-
 class ConversationManager:
     def __init__(self):
         pass
