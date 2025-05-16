@@ -1,6 +1,9 @@
 from typing import Tuple
 import asyncpg
 from utils.config import cfg
+import logging
+
+log = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
@@ -26,7 +29,11 @@ class Database:
         )
 
     async def is_concluded(self, chat_id: int):
-        conv_id, _ = await self.get_current_conv(chat_id)
+        current_conv = await self.get_current_conv(chat_id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {chat_id}")
+            return False
+        conv_id, _ = current_conv
         res = await self.conn.fetchrow(
             "SELECT is_concluded FROM convs WHERE conv_id=$1",
             conv_id
@@ -34,7 +41,11 @@ class Database:
         return res['is_concluded'] if res else None
     
     async def is_started(self, chat_id: int):
-        conv_id, _ = await self.get_current_conv(chat_id)
+        current_conv = await self.get_current_conv(chat_id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {chat_id}")
+            return False
+        conv_id, _ = current_conv
         res = await self.conn.fetchrow(
             "SELECT is_started FROM convs WHERE conv_id=$1",
             conv_id
@@ -81,7 +92,11 @@ class Database:
             await self.delete_conv(conv_id)
     
     async def get_questions(self, chat_id: int) -> list[dict]:
-        conv_id, _ = await self.get_current_conv(chat_id)
+        current_conv = await self.get_current_conv(chat_id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {chat_id}")
+            return False
+        conv_id, _ = current_conv
         res = await self.conn.fetch(
             "SELECT question_id, question_text, answer FROM questions WHERE conv_id=$1",
             conv_id
@@ -93,7 +108,11 @@ class Database:
             } for entry in res]
     
     async def get_messages(self, chat_id: int) -> list[dict]:
-        conv_id, _ = await self.get_current_conv(chat_id)
+        current_conv = await self.get_current_conv(chat_id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {chat_id}")
+            return False
+        conv_id, _ = current_conv
         res = await self.conn.fetch(
             "SELECT role, message_text FROM chatlogs WHERE conv_id=$1 ORDER BY message_id",
             conv_id
@@ -119,7 +138,11 @@ class Database:
         )
 
     async def set_questions(self, chat_id: int, questions: list[str]):
-        conv_id, _ = await self.get_current_conv(chat_id)
+        current_conv = await self.get_current_conv(chat_id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {chat_id}")
+            return False
+        conv_id, _ = current_conv
         await self.conn.execute(
             "DELETE FROM questions WHERE conv_id=$1",
             conv_id

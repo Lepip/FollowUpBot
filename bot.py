@@ -7,24 +7,32 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from utils.config import cfg
 from utils.database import Database
-from utils.middleware import AlbumMiddleware
+from bot.prompt_engineer import PromptEngineer
+from bot.smart import MistralAPI
 
 debug_is_possible = False
-debug = False
+DEBUG = cfg['debug']
 bot = Bot(token=cfg['bot_token'], parse_mode='HTML')
 storage = MemoryStorage()
+mistral_api = MistralAPI(cfg['mistral_token'], cfg['mistral_model'])
 
 dp = Dispatcher(bot, storage=storage)
 
-logging.basicConfig(filename='bot.log', level=logging.INFO)
+logging.basicConfig(level=logging.INFO, 
+                    handlers=[
+                        logging.StreamHandler(),
+                        logging.FileHandler('bot.log')
+                    ])
+log = logging.getLogger(__name__)
 
+doUpdateQuestions = False
 
 @dp.message_handler(commands="debug")
 async def handle_start_command(message: types.Message):
-    global debug
+    global DEBUG
     if debug_is_possible:
-        debug = not debug
-        if debug:
+        DEBUG = not DEBUG
+        if DEBUG:
             await message.reply(f"Debug on")
         else:
             await message.reply(f"Debug off")
@@ -35,28 +43,50 @@ class ConversationState(StatesGroup):
     waiting_for_answer = State()
     closed = State()
 
+async def ask_question(chat_id: int, conv_id: int, add_system_prompt: bool = False) -> str:
+    async with Database() as db:
+        log.info(f"Asking question for conv {conv_id}.")
+        messages = await db.get_messages(chat_id)
+        log.info(f"Messages: {messages}")
+        if add_system_prompt or len(messages) <= 1:
+            questions = await db.get_questions(chat_id)
+            system_prompt = PromptEngineer.get_system_prompt(questions)
+            log.info(f"System prompt: {system_prompt}")
+            await db.add_message(conv_id, system_prompt, "system")
+        messages = await db.get_messages(chat_id)
+        log.info(f"Asking...")
+        asked_question = mistral_api.generate(messages)
+        await db.add_message(conv_id, asked_question, "assistant")
+        return asked_question
+
 async def init_conversation(message: types.Message, state: FSMContext):
-    logging.info("Startintg conversation.")
+    log.info("Startintg conversation.")
     await message.answer("Разговор начинается.")
     async with Database() as db:
         is_closed = await db.is_concluded(message.chat.id)
         if (is_closed is None) or is_closed:
             await state.finish()
-            logging.warning(f"Couldn't start conversation: it's closed: {is_closed}.")
+            log.warning(f"Couldn't start conversation: it's closed: {is_closed}.")
             await message.answer("Не удалось начать текущий разговор. Он уже закончен. Проверьте <code>/status</code>.")
             return
-        conv_id, _ = await db.get_current_conv(message.chat.id)
+        current_conv = await db.get_current_conv(message.chat.id)
+        if current_conv is None:
+            log.warning(f"Couldn't start conversation: couldn't get current conv for chat {message.chat.id}")
+            return
+        conv_id, _ = current_conv
         next_question = await db.get_next_question(conv_id)
         if next_question is None:
             await db.set_status(conv_id, True, True)
-            logging.warning(f"Couldn't start conversation: no questions.")
+            log.warning(f"Couldn't start conversation: no questions.")
             await message.answer("Не удалось начать текущий разговор. Он уже закончен. Проверьте <code>/status</code>.")
             await state.finish()
             return
     await state.update_data(current_question_id=next_question['question_id'])
-    await message.answer(next_question['question_text'])
+    # Sends a question
+    question = await ask_question(message.chat.id, conv_id)
+    await message.answer(question)
     await ConversationState.waiting_for_answer.set()
-    logging.info(f"Started conversation. Asked a question: {next_question['question_text']}")
+    log.info(f"Started conversation. Asked a question: {question}")
 
 
 @dp.message_handler(commands="start")
@@ -222,18 +252,46 @@ async def ask_next_question(message: types.Message, conv_id: int, state: FSMCont
         await state.finish()
         return
 
-    await message.answer(next_question['question_text'])
+    # Ask a question
+    question = await ask_question(message.chat.id, conv_id)
+    await message.answer(question)
     await state.update_data(current_question_id=next_question['question_id'])
     await ConversationState.waiting_for_answer.set()
 
 @dp.message_handler(commands="restart")
 async def cmd_restart(message: types.Message, state: FSMContext):
     async with Database() as db:
-        conv_id = await db.get_current_conv(message.chat.id)
+        current_conv = await db.get_current_conv(message.chat.id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {message.chat.id}")
+            return
+        conv_id, _ = current_conv
         await db.clear_answers(conv_id)
         await db.delete_chatlogs(conv_id)
     await message.answer("Текущий разговор перезапущен.")
     await init_conversation(message, state)
+
+async def update_questions(chat_id: int, conv_id: int):
+    async with Database() as db:
+        messages = await db.get_messages(chat_id)
+        questions = await db.get_questions(chat_id)
+        system_prompt = PromptEngineer.get_question_check_prompt(questions)
+        messages.append({"role": "system", "content": system_prompt})
+        response = mistral_api.generate(messages)
+        if "Нет ответа" in response:
+            log.info("No answers")
+            return
+        log.info(f"Questions update response: {response}")
+        question_id, answer = response.split(":")
+        question_id = question_id.strip()
+        if "Вопрос" in question_id:
+            question_id = question_id.split(" ")[1]
+        try:
+            question_id = int(question_id.strip())
+        except(ValueError):
+            log.warning(f"Couldn't parse question id: {question_id}")
+            return
+        await db.write_answer(conv_id, question_id, answer.strip())
 
 @dp.message_handler(state=ConversationState.waiting_for_answer)
 async def regular_message(message: types.Message, state: FSMContext):
@@ -241,8 +299,15 @@ async def regular_message(message: types.Message, state: FSMContext):
     current_question_id = data.get('current_question_id')
 
     async with Database() as db:
-        conv_id, _ = await db.get_current_conv(message.chat.id)
-        await db.write_answer(conv_id, current_question_id, message.text)
+        current_conv = await db.get_current_conv(message.chat.id)
+        if current_conv is None:
+            log.warning(f"Couldn't get current conv for chat {message.chat.id}")
+            return 
+        conv_id, _ = current_conv
+        # Write the answer
+        await db.add_message(conv_id, message.text, "user")
+        if doUpdateQuestions:
+            await update_questions(message.chat.id, conv_id)
 
     await ask_next_question(message, conv_id, state)
 
