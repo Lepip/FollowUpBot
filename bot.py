@@ -19,7 +19,7 @@ mistral_api = MistralAPI(cfg['mistral_token'], cfg['mistral_model'])
 
 dp = Dispatcher(bot, storage=storage)
 
-logging.basicConfig(level=logging.INFO, 
+logging.basicConfig(level=logging.DEBUG, 
                     handlers=[
                         logging.StreamHandler(),
                         logging.FileHandler('bot.log')
@@ -57,6 +57,15 @@ async def get_answer(conversation, user_text=None):
     answer = await conversation.get_response(user_text, mistral_api)
     return answer
 
+async def reply_analysis(message, conversation):
+    if conversation.analysis:
+        await message.reply("Анализ ответов:")
+        analysis = conversation.analysis
+        for i in range(0, len(analysis), 4096):
+            await message.answer(analysis[i:i+4096])
+    else:
+        await message.reply("Анализ ответов недоступен.")
+
 @dp.message_handler(commands=['restart'])
 async def restart_conversation(message: types.Message, state: FSMContext):
     await ConversationStates.in_conversation.set()
@@ -86,6 +95,7 @@ async def handle_in_conversation(message: types.Message, state: FSMContext):
         answer = await get_answer(conversation, message.text)
         if answer is None:
             await message.reply(conversation.get_final_response())
+            await reply_analysis(message, conversation)
             await state.finish()
             return
         await message.reply(answer)
@@ -104,8 +114,13 @@ async def check_status(message: types.Message, state: FSMContext):
         status += f"Этап: {conversation.stage['name']}\n"
     status += f"Начат ли разговор: {conversation.is_started}\n"
     status += f"Закончен ли разговор: {conversation.is_concluded}\n"
+    status += f"Есть ли вопросы: {conversation.have_questions}\n"
+    status += f"Тип текущего batch (if_yes): {conversation.if_yes}\n"
     messages = await conversation.get_messages()
-    status += f"История диалога: {messages}\n"
+    messages = "\n".join(messages)
+    log.info(f"Messages: {messages}")
+    await message.reply(status)
+    return
 
 
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
@@ -119,6 +134,7 @@ async def handle_outside_conversation(message: types.Message, state: FSMContext)
         answer = await get_answer(conversation, message.text)
         if answer is None:
             await message.reply(conversation.get_final_response())
+            await reply_analysis(message, conversation)
             await state.finish()
             return
         await message.reply(answer)

@@ -69,7 +69,7 @@ class Database:
         )
         return [{'role': entry['role'], 'content': entry['message_text']} for entry in res]
     
-    async def add_message(self, chat_id: int, message_text: str, role: str):
+    async def add_message(self, chat_id: int, message_text: str, role: str, stage_id: int):
         max_message_id = await self.conn.fetchval(
             "SELECT COALESCE(MAX(message_id), 0) FROM chatlogs WHERE chat_id=$1",
             chat_id
@@ -77,9 +77,27 @@ class Database:
         message_id = max_message_id + 1
 
         await self.conn.execute(
-            "INSERT INTO chatlogs (chat_id, message_id, message_text, role) VALUES ($1, $2, $3, $4)",
-            chat_id, message_id, message_text, role
+            "INSERT INTO chatlogs (chat_id, message_id, message_text, role, stage_id) VALUES ($1, $2, $3, $4, $5)",
+            chat_id, message_id, message_text, role, stage_id
         )
+
+    async def get_stage_messages(self, chat_id: int, stage_id: int):
+        res = await self.conn.fetch(
+            "SELECT role, message_text FROM chatlogs WHERE chat_id=$1 AND stage_id=$2 ORDER BY message_id",
+            chat_id, stage_id
+        )
+        return [{'role': entry['role'], 'content': entry['message_text']} for entry in res]
+
+    async def insert_answers(self, chat_id: int, questions: dict, answers: dict):
+        for question in questions:
+            answer_text = answers.get(question['id'])
+            await self.conn.execute(
+                '''
+                INSERT INTO public.answers (chat_id, question_id, question_text, answer_text)
+                VALUES ($1, $2, $3, $4)
+                ''', 
+                chat_id, question['id'], question['text'], answer_text
+            )
 
     async def __aenter__(self):
         await self.connect()

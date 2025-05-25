@@ -1,4 +1,3 @@
-from utils.database import Database
 import logging
 import json
 
@@ -34,13 +33,13 @@ class PromptEngineer:
     @staticmethod
     def load_stages():
         if PromptEngineer.stages_ is None:
-            with open('stages.json', 'r', encoding='utf-8') as file:
+            with open('test_stages.json', 'r', encoding='utf-8') as file:
                 PromptEngineer.stages_ = json.load(file)["stages"]
         return PromptEngineer.stages_
     
     @staticmethod
     def get_stage(stage_id):
-        if stage_id > len(PromptEngineer.load_stages()):
+        if stage_id >= len(PromptEngineer.load_stages()):
             log.warning(f"Stage with id {stage_id} not found")
             return {}
         return PromptEngineer.load_stages()[stage_id]
@@ -75,4 +74,10 @@ class PromptEngineer:
         prompt = f"Текущая тема: {stage_name}"
         prompt += f"\n\nВопрос, на который нужно получить ответ от пациента:\n{question}"
         prompt += "\n\nОт этого вопроса зависит, какие далее вопросы следует задавать. После получения ответа, если пациент ответил положительно, напиши \"\\yes\", если отрицательно, напиши \"\\no\""
+        return prompt
+    
+    @staticmethod
+    def prompt_answers_list(questions):
+        questions_str = "\n".join([f"{q['id']}: {q['text']}" for q in questions])
+        prompt = f"Запиши ответы пациента на следующие вопросы в формате \"id: ответ\", если пациент не дал ответа, напиши None. Вопросы: \n{questions_str}"
         return prompt

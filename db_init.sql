@@ -14,5 +14,14 @@ CREATE TABLE IF NOT EXISTS public.chatlogs
     chat_id bigint NOT NULL,
     message_id bigint NOT NULL,
     message_text text NOT NULL,
+    stage_id integer NOT NULL,
     role text NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.answers
+(
+    chat_id bigint NOT NULL,
+    question_id bigint NOT NULL,
+    question_text text NOT NULL,
+    answer_text text NOT NULL
 );
