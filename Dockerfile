@@ -8,7 +8,10 @@ ENV DB_PORT=51373
 ENV DB_USER=postgres
 ENV DB_NAME=followup_bot_db
 ENV DB_PASSWORD=Jbf4833Tk3Q7
-ENV BOT_TOKEN=<token>
+ENV BOT_TOKEN=<your tg token>
+ENV MISTRAL_TOKEN=<your mistral token>
+ENV MISTRAL_MODEL=mistral-large-latest
+ENV DEBUG=False
 
 ADD requirements.txt requirements.txt
 
