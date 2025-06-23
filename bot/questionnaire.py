@@ -22,6 +22,7 @@ class Batch:
         return f"Batch(questions={self.questions}, batch_if_yes={self.batch_if_yes}, batch_done={self.batch_done})"
 
 def dfs(questions):
+    '''Breaks questionnaire into batches. Batches are separated by if_cond questions and endings of a layer.'''
     batches = []
     current = Batch()
     linking_out = []
@@ -60,6 +61,7 @@ def parse_json_to_questions(json_data):
     return [parse_question(q) for q in json_data]
 
 class StageOperator:
+    '''Class for moving between batches of questions inside current stage depending on the answers given.'''
     def __init__(self, stage_questions=None, batch_id=0):
         self.current_batch = None
         self.raw = None

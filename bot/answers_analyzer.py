@@ -6,6 +6,7 @@ log = logging.getLogger(__name__)
 import time
 
 def construct_questions(questions):
+    '''Parses the questions json into a nested list.'''
     result = []
     for q in questions:
         result.append({"id": q.id, "text": q.text})
@@ -14,6 +15,7 @@ def construct_questions(questions):
     return result
 
 def parse_answers(answers):
+    '''Parses the extracted by LLM answers from the user into a dictionary. Expects the format of """1: answer\n2: answer\n3: None\n4: answer"'''
     lines = answers.strip().split('\n')
     texts = {}
     for line in lines:
@@ -27,11 +29,13 @@ def parse_answers(answers):
     return texts
         
 async def analyze_answers(chat_id: int, llm):
+    '''Writes answers for the questionnaire into the database based on the conversation.'''
     stages = PromptEngineer.load_stages()
     max_stage_id = len(stages)
     analysis = []
     questions = []
     for stage_id in range(1, max_stage_id + 1):
+        # Each stage is processed independently
         async with Database() as db:
             messages = await db.get_stage_messages(chat_id, stage_id - 1)
         stage_questions = stages[stage_id - 1]['questions']
@@ -42,7 +46,7 @@ async def analyze_answers(chat_id: int, llm):
         answer = llm.generate(messages)
         log.info(f"Answers analysis for stage {stage_id}: {answer}")
         analysis.append(answer)
-        time.sleep(3)
+        time.sleep(3) # To avoid rate limiting
     analysis = "\n".join(analysis)
     async with Database() as db:
         await db.insert_answers(chat_id, questions, parse_answers(analysis))

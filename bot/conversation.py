@@ -7,6 +7,15 @@ import logging
 log = logging.getLogger(__name__)
 
 class ConversationManager:
+    '''Convesation has parts:
+    - is_started: whether bot sent the initial message
+    - has_questions: whether bot has questions loaded for the first stage
+    - set_theme: wheter bot has sent the first initial question
+    - is_concluded: whether bot sent the final message.
+    
+    Questionnaire is built of stages, each stage has batches of questions. Batches are desided as a list of questions
+    up until a question of type "if", or a singular "if" question, or questions up to the end of current level of nesting.
+    Batch questions are sent as a whole for to the bot context.'''
     def __init__(self):
         self.analysis = None
 
@@ -15,6 +24,7 @@ class ConversationManager:
         await self.load(chat_id)
     
     async def progress_stage(self):
+        '''Progresses to the next stage of the questionnaire'''
         log.debug(f"Progressing stage: {self.stage_id}")
         self.stage_id += 1
         self.batch_id = -1
@@ -23,6 +33,7 @@ class ConversationManager:
         return await self.add_questions_system(recursive=True)
 
     async def load(self, chat_id):
+        '''Reload the conversation from the database'''
         async with Database() as db:
             self.chat_id = chat_id
             self.have_questions = False
@@ -34,6 +45,7 @@ class ConversationManager:
            await db.add_message(self.chat_id, message, role, self.stage_id)
 
     def load_stage(self, stage_id=None, batch_id=None):
+        '''Reloads the current or given stage-batch from the database'''
         if stage_id is None:
             stage_id = self.stage_id
         if batch_id is None:
@@ -80,6 +92,7 @@ class ConversationManager:
         return answer
     
     async def get_messages(self):
+        '''Returns messages in the format ["role: message", ...] as a list of strings. Used only for debug/logging.'''
         async with Database() as db:
             messages = await db.get_messages(self.chat_id)
         message_logs = []
@@ -93,6 +106,7 @@ class ConversationManager:
             await db.set_conv_stage(self.chat_id, self.stage_id, self.batch_id, self.is_started, self.is_concluded, self.set_theme)
 
     async def get_response(self, message, llm):
+        '''One-for-all function to get the next response from the llm in this convesation, given users message. Also processes parts of the conversation.'''
         log.debug(f"Getting a response to message {message}")
         if self.is_concluded:
             await self.update_db()
@@ -104,7 +118,7 @@ class ConversationManager:
             log.debug("Added user message to db")
             await self.add_user_message(f"Пациент: \"{message}\"")
         
-        if not self.is_started:
+        if not self.is_started: # Stage is_started
             log.debug("Starting a conversation")
             self.is_started = True
             self.have_questions = False
@@ -117,7 +131,7 @@ class ConversationManager:
             await self.update_db()
             return start_message
         
-        if not self.set_theme:
+        if not self.set_theme:  # Stage set_theme
             log.debug("Setting a theme")
             self.set_theme = True
             theme_message = PromptEngineer.initial_theme_prompt()
@@ -125,7 +139,7 @@ class ConversationManager:
             await self.update_db()
             return theme_message
 
-        if not self.have_questions:
+        if not self.have_questions: # Adding initial questions for the first stage
             log.debug("Adding initial questions")
             self.batch_id = -1
             self.stage_id = 0
@@ -140,7 +154,7 @@ class ConversationManager:
             await self.update_db()
             return await self.add_answer(answer)
         
-        if self.if_yes:
+        if self.if_yes: # Processing a question with if_yes tag
             log.debug("Getting a response to if_yes")
             answer = await self.get_chatbot_answer(llm)
             answer_if = False
@@ -165,7 +179,7 @@ class ConversationManager:
             answer = await self.get_chatbot_answer(llm)
             await self.update_db()
             return await self.add_answer(answer)
-        else:
+        else: # Processing a regular message
             answer = await self.get_chatbot_answer(llm)
             result = await self.add_answer(answer)
             log.debug("Checking for done")
@@ -185,6 +199,7 @@ class ConversationManager:
         return PromptEngineer.last_response()
 
     async def add_questions_system(self, answered_yes=False, recursive = False):
+        '''Loads questions from the questionnaire and adds them to the context of the LLM as a user message.'''
         questions, if_yes = self.questionnaire.get(answered_yes)
         if questions is None and recursive:
             return False

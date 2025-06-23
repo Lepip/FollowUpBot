@@ -33,7 +33,7 @@ class PromptEngineer:
     @staticmethod
     def load_stages():
         if PromptEngineer.stages_ is None:
-            with open('test_stages.json', 'r', encoding='utf-8') as file:
+            with open('test_stages.json', 'r', encoding='utf-8') as file: # change to stages.json for production
                 PromptEngineer.stages_ = json.load(file)["stages"]
         return PromptEngineer.stages_
     

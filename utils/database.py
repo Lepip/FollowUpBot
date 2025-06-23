@@ -19,6 +19,7 @@ class Database:
         )
 
     async def restart_conv(self, chat_id: int):
+        '''Deletes conversation chat_id and creates an empty new one'''
         await self.conn.execute(
             "DELETE FROM convs WHERE chat_id=$1",
             chat_id
@@ -36,18 +37,21 @@ class Database:
         )
     
     async def start_conv(self, chat_id: int):
+        '''Sets is_started to True for the given chat_id'''
         await self.conn.execute(
             "UPDATE convs SET is_started = $2 WHERE chat_id = $1",
             chat_id, True
         )
 
     async def end_conv(self, chat_id: int):
+        '''Sets is_concluded to True for the given chat_id'''
         await self.conn.execute(
             "UPDATE convs SET is_concluded = $2 WHERE chat_id = $1",
             chat_id, True
         )
 
     async def get_conv_stage(self, chat_id: int) -> Tuple[int, int, bool, bool]:
+        '''Returns the current stage_id, batch_id, is_started, is_concluded, set_theme for the given chat_id'''
         res = await self.conn.fetchrow(
             "SELECT stage_id, batch_id, is_started, is_concluded, set_theme FROM convs WHERE chat_id=$1", 
             chat_id
@@ -57,12 +61,14 @@ class Database:
         return (res['stage_id'], res['batch_id'], res['is_started'], res['is_concluded'], res['set_theme']) if res else (0, -1, False, False, False)
     
     async def set_conv_stage(self, chat_id: int, stage_id: int, batch_id: int, is_started: bool, is_concluded: bool, set_theme: bool):
+        '''Sets the parameters for the given chat_id'''
         await self.conn.execute(
             "UPDATE convs SET stage_id = $2, batch_id = $3, is_started = $4, is_concluded = $5, set_theme = $6 WHERE chat_id = $1",
             chat_id, stage_id, batch_id, is_started, is_concluded, set_theme
         )
 
     async def get_messages(self, chat_id: int) -> list[dict]:
+        '''Returns the messages for the given chat_id in the format [{'role': 'user', 'content': 'message_text'}, ...]'''
         res = await self.conn.fetch(
             "SELECT role, message_text FROM chatlogs WHERE chat_id=$1 ORDER BY message_id",
             chat_id
@@ -70,6 +76,7 @@ class Database:
         return [{'role': entry['role'], 'content': entry['message_text']} for entry in res]
     
     async def add_message(self, chat_id: int, message_text: str, role: str, stage_id: int):
+        '''Appends the message to the chatlogs of the given chat_id'''
         max_message_id = await self.conn.fetchval(
             "SELECT COALESCE(MAX(message_id), 0) FROM chatlogs WHERE chat_id=$1",
             chat_id
@@ -82,6 +89,7 @@ class Database:
         )
 
     async def get_stage_messages(self, chat_id: int, stage_id: int):
+        '''Returns the messages for a specific stage in the format [{'role': 'user', 'content': 'message_text'}, ...]'''
         res = await self.conn.fetch(
             "SELECT role, message_text FROM chatlogs WHERE chat_id=$1 AND stage_id=$2 ORDER BY message_id",
             chat_id, stage_id
@@ -89,6 +97,7 @@ class Database:
         return [{'role': entry['role'], 'content': entry['message_text']} for entry in res]
 
     async def insert_answers(self, chat_id: int, questions: dict, answers: dict):
+        '''Writes the answers in the database. Expects questions in the format [{'id': 1, 'text': 'question_text'}, ...] and answers in the format {1: 'answer_text', ...}'''
         for question in questions:
             answer_text = answers.get(question['id'])
             await self.conn.execute(
